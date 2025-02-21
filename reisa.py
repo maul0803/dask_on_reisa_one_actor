@@ -7,27 +7,13 @@ import ray
 import sys
 import gc
 import os
+import dask.array as da
+from ray.util.dask import ray_dask_get, enable_dask_on_ray, disable_dask_on_ray
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
 # "Background" code for the user
-
-# This class will be the key to able the user to deserialize the data transparently
-class RayList(list):
-    def __call__(self, index): # Square brackets operation to obtain the data behind the references.
-        item = super().__getitem__(index)
-        if isinstance(index, slice):
-            free(item)
-        else:
-            free([item])
-
-    def __getitem__(self, index): # Square brackets operation to obtain the data behind the references.
-        item = super().__getitem__(index)
-        if isinstance(index, slice):
-            return ray.get(RayList(item))
-        else:
-            return ray.get(item)
 
 class Reisa:
     def __init__(self, file, address):
@@ -80,28 +66,31 @@ class Reisa:
 
         @ray.remote(max_retries=-1, resources={"compute":1, "transit":iter_ratio}, scheduling_strategy="DEFAULT")
         def iter_task(i: int, actor):
-            current_result = actor.trigger.remote(process_task, i)
-            current_result = ray.get(current_result)
-            
+            current_result = actor.trigger.remote(process_task, i) # type ray._raylet.ObjectRef
+            current_result = ray.get(current_result) # type: List[ray._raylet.ObjectRef]
             if i >= kept_iters-1:
                 actor.free_mem.remote(current_result, i-kept_iters+1)
+            current_result = ray.get(current_result) # type: List[dask.array.core.Array]
+            current_result = da.stack(current_result, axis=0) # type: dask.array.core.Array
             
-            return iter_func(i, RayList(current_result))
+            return iter_func(i, current_result)
 
-        start = time.time() # Measure time
+        start = time.time()  # Measure time
         results = [iter_task.remote(i, actor) for i in selected_iters]
-        ray.wait(results, num_returns=len(results)) # Wait for the results
-        eprint("{:<21}".format("EST_ANALYTICS_TIME:") + "{:.5f}".format(time.time()-start) + " (avg:"+"{:.5f}".format((time.time()-start)/self.iterations)+")")
+        ray.wait(results, num_returns=len(results))  # Wait for the results
+        eprint(
+            "{:<21}".format("EST_ANALYTICS_TIME:") + "{:.5f}".format(time.time() - start) + " (avg:" + "{:.5f}".format(
+                (time.time() - start) / self.iterations) + ")")
+        tmp = ray.get(results)
         if global_func:
-            return global_func(RayList(results))
+            return global_func(tmp)  # RayList(results) TODO
         else:
-            tmp = ray.get(results)
-            output = {} # Output dictionary
+            output = {}  # Output dictionary
 
             for i, _ in enumerate(selected_iters):
                 if tmp[i] is not None:
                     output[selected_iters[i]] = tmp[i]
-            
+
             if timeline:
                 ray.timeline(filename="timeline-client.json")
 

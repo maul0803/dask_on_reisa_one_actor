@@ -29,7 +29,7 @@ pdi:
           exec: |
             from ray._private.internal_api import free
             from datetime import datetime
-            from reisa import RayList
+            import dask.array as da
             import numpy as np
             import netifaces
             import logging
@@ -63,7 +63,6 @@ pdi:
             class ProcessActor:
                 def __init__(self):
                     self.data_queues = []  # Simulation data will be stored here
-                    self.offset = int(rank)  # Rank of the process that creates the actor
                     self.control = [0 for _ in range(iterations)]  # Number of processes that have stored the data on each iteration
                     for i in range(mpi_total):
                         self.data_queues.append([None for _ in range(iterations)])
@@ -93,18 +92,21 @@ pdi:
 
                 # The client will tell the actor to execute some tasks through this method
                 @ray.method(concurrency_group="exec")
-                def trigger(self, process_task: ray.remote_function.RemoteFunction, i: int):
-                    tasks = RayList()
-
+                def trigger(self, process_task: ray.remote_function.RemoteFunction, i: int):                 
                     # Ensure that all processes have stored its value and throwed their tasks
-                    while np.sum(self.control[:i + 1]) < (mpi_total * (i + 1)):
+                    while np.sum(self.control[:i+1]) < (mpi_total*(i+1)):
                         pass
 
-                    tasks = [process_task.remote(mpid + self.offset, i, RayList(self.data_queues[mpid][:i + 1])) \
-                            for mpid in range(mpi_total)]
-
+                    tasks = [process_task.remote(
+                                mpid, 
+                                i, 
+                                da.from_array(np.array(ray.get(self.data_queues[mpid][:i+1])))
+                            ) for mpid in range(mpi_total)] #
+                    
                     gc.collect()
                     return tasks
+
+
 
 
             put_time = 0

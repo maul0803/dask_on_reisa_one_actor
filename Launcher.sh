@@ -5,8 +5,8 @@
 PDI_PREFIX=${HOME}/opt/pdi_py39
 export PATH=${PDI_PREFIX}/bin:${PATH}
 
-#PARTITION=cpu_short    # For Ruche cluster
-PARTITION=short         # For FT3 cluster
+#PARTITION=cpu_short    # Ruche
+PARTITION=short         # FT3
 
 MAIN_DIR=$PWD
 
