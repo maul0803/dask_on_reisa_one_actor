@@ -68,8 +68,8 @@ class Reisa:
         def iter_task(i: int, actor):
             current_result = actor.trigger.remote(process_task, i) # type ray._raylet.ObjectRef
             current_result = ray.get(current_result) # type: List[ray._raylet.ObjectRef]
-            if i >= kept_iters-1:
-                actor.free_mem.remote(current_result, i-kept_iters+1)
+            #if i >= kept_iters-1:
+            #    actor.free_mem.remote(current_result, i-kept_iters+1)
             current_result = ray.get(current_result) # type: List[dask.array.core.Array]
             current_result = da.stack(current_result, axis=0) # type: dask.array.core.Array
             
