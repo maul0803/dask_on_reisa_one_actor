@@ -100,14 +100,17 @@ class Reisa:
             :param actor: Ray actor managing the simulation.
             :return: Processed iteration result.
             """
-            current_result = actor.trigger.remote(process_task, i) # type ray._raylet.ObjectRef
-            current_result = ray.get(current_result) # type: List[ray._raylet.ObjectRef]
+            enable_dask_on_ray()
+            current_results = actor.trigger.remote(process_task, i) # type: #ray._raylet.ObjectRef
+            current_results_list = ray.get(current_results) #List[ray._raylet.ObjectRef]
             #if i >= kept_iters-1:
-            #    actor.free_mem.remote(current_result, i-kept_iters+1)
-            current_result = ray.get(current_result) # type: List[dask.array.core.Array]
-            current_result = da.stack(current_result, axis=0) # type: dask.array.core.Array
-            
-            return iter_func(i, current_result)
+            #    actor.free_mem.remote(current_results[0], i-kept_iters+1)
+            current_results_list = ray.get(current_results_list)  # type: #List[dask.array.core.Array]
+            current_results_array = da.stack(current_results_list, axis=0)  # type: #dask.array.core.Array
+            current_results = iter_func(i, current_results_array)  # type: #dask.array.core.Array
+            return current_results
+
+
 
         start = time.time()  # Measure time
         results = [iter_task.remote(i, actor) for i in selected_iters]
@@ -117,7 +120,7 @@ class Reisa:
                 (time.time() - start) / self.iterations) + ")")
         tmp = ray.get(results)
         if global_func:
-            return global_func(tmp)  # RayList(results) TODO
+            return global_func(tmp)
         else:
             output = {}  # Output dictionary
 

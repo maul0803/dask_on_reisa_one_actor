@@ -52,7 +52,14 @@ pdi:
             ib = netifaces.ifaddresses('ib0')[netifaces.AF_INET][0]['addr']  # Infiniband address
             concurrency = 8  # Actor concurrency value
             threshold = 0.5
-            ray.init(address="auto", namespace="mpi", logging_level=logging.ERROR, _node_ip_address=ib)
+
+            ray.init(
+                address="auto",
+                namespace="mpi",
+                logging_level=logging.ERROR,
+                _node_ip_address=ib,
+            )
+            
             initial_status = ray._private.state.state._available_resources_per_node()
 
             cg = int(concurrency * 3 / 4)
@@ -93,16 +100,15 @@ pdi:
                 # The client will tell the actor to execute some tasks through this method
                 @ray.method(concurrency_group="exec")
                 def trigger(self, process_task: ray.remote_function.RemoteFunction, i: int):                 
+                    
                     # Ensure that all processes have stored its value and throwed their tasks
                     while np.sum(self.control[:i+1]) < (mpi_total*(i+1)):
                         pass
-
                     tasks = [process_task.remote(
-                                mpid, 
-                                i, 
-                                da.from_array(np.array(ray.get(self.data_queues[mpid][:i+1])))
-                            ) for mpid in range(mpi_total)] #
-                    
+                            mpid,
+                            i,
+                            self.data_queues[mpid][:i+1]) 
+                            for mpid in range(mpi_total)]
                     gc.collect()
                     return tasks
 
@@ -165,7 +171,7 @@ pdi:
             start = time.time()
             while error:
                 try:
-                    d = ray.put(data, _owner=actor)
+                    d = ray.put(da.from_array(np.array(data)), _owner=actor)
                     error = False
                 except Exception as e:
                     error = True
